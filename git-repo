@@ -1,0 +1,104 @@
+#!/usr/bin/env sh
+
+DO=HELP
+FORCE=N
+FILENAME=
+
+case "$1" in
+    list)    DO=LIST  ;;
+    clean)   DO=CLEAN ;;
+    help)    DO=HELP  ;;
+    *)
+    echo "Bad command $1"
+    DO=HELP ;;
+esac
+
+shift
+
+while [ "$#" \!= 0 ]; do
+    CURRENT="$1"
+
+    case "$CURRENT" in
+        -f|--file)    FILENAME="$2"; shift ;;
+        -n|--dry-run) FORCE=N ;;
+        -c|--clean)   FORCE=Y ;;
+        --)           shift; break ;;
+        -*)
+             echo "Bad parameter $CURRENT"
+             DO=HELP
+             break;
+             ;;
+        *) break ;;
+    esac
+    shift
+done
+
+if [ "${DO}" = HELP ]; then
+    cat <<EOF
+Usage: $0 action [options] [--] [repo1 [repo2 [...]]]
+
+Where actions include:
+  list         List branch in origin
+  clean        Remove the specified branch from origin
+  help         Display this message
+
+Where options include:
+--dry-run or -n             Don't delete, only show what would be deleted
+--clean or -c               Actually do deletion of remote branches.
+--file [FILE] or -f [FILE]  Specify the file to read/write branch list from/to
+                            Defaults to STDIN/STDOUT
+
+--                          Not an argument, but rather an indication that all
+                            following items are branches to clean
+
+Notes on cleaning up remote branches:
+
+clean is a dangerous operation! Make sure that what you specify
+is what you actually want deleted!
+
+clean wil *NOT* remove develop or master even if directed to.
+EOF
+    exit 1
+fi
+
+if [ "${DO}" = LIST ]; then
+    git fetch origin --prune > /dev/null 2>&1
+
+    if [ ":${FILENAME}" = : ]; then
+        git branch -r | grep origin | cut -d / -f 2-
+    else
+        git branch -r | grep origin | cut -d / -f 2- > "${FILENAME}"
+    fi
+    exit 0;
+fi
+
+function get_list () {
+    local FILE="$1"
+    shift
+
+    while [ "$#" \!= 0 ]; do
+        echo "$1"
+        shift
+    done
+
+    if [ ":${FILE}" \!= : ]; then
+        cat "${FILE}" | egrep -v "^(master|develop)$" | egrep -v "^HEAD "
+    fi
+}
+
+if [ "${DO}" = CLEAN -a "${FORCE}" = N ]; then
+    get_list "${FILENAME}" "$@" | while read BRANCH; do echo "Would delete branch: ${BRANCH}"; done
+    echo "To actually delete these use the --clean or the -c switches"
+    exit 0;
+fi
+
+if [ "${DO}" = CLEAN -a "${FORCE}" = Y ]; then
+    echo Cleaning in 5 seconds, ctrl-c to stop
+    seq 5 -1 1 | while read I; do echo "$I "; sleep 1; done
+    echo Cleaning
+    get_list "${FILENAME}" "$@" | while read BRANCH; do git push origin ":${BRANCH}"; done
+    git fetch origin --prune > /dev/null 2>&1
+    exit 0;
+fi
+
+
