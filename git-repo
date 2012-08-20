@@ -3,6 +3,7 @@
 DO=HELP
 FORCE=N
 FILENAME=
+REMOTE=origin
 
 case "$1" in
     list)    DO=LIST  ;;
@@ -22,6 +23,7 @@ while [ "$#" \!= 0 ]; do
         -f|--file)    FILENAME="$2"; shift ;;
         -n|--dry-run) FORCE=N ;;
         -c|--clean)   FORCE=Y ;;
+        -r|--remote)  REMOTE="$2"; shift ;;
         --)           shift; break ;;
         -*)
              echo "Bad parameter $CURRENT"
@@ -35,21 +37,23 @@ done
 
 if [ "${DO}" = HELP ]; then
     cat <<EOF
-Usage: $0 action [options] [--] [repo1 [repo2 [...]]]
+Usage: $0 action [options] [--] [branch1 [branch2 [...]]]
 
 Where actions include:
-  list         List branch in origin
-  clean        Remove the specified branch from origin
+  list         List branch in origin (or specified remote)
+  clean        Remove the specified branch from origin (or specified remote)
   help         Display this message
 
 Where options include:
---dry-run or -n             Don't delete, only show what would be deleted
+--dry-run or -n             Don't delete, only show what would be deleted.
 --clean or -c               Actually do deletion of remote branches.
---file [FILE] or -f [FILE]  Specify the file to read/write branch list from/to
+--file [FILE] or -f [FILE]  Specify the file to read/write branch list from/to.
                             Defaults to STDIN/STDOUT
+--remote [REMOTE] or -r [REMOTE]   Sets the remote repository to use.
+                            Defaults to origin
 
 --                          Not an argument, but rather an indication that all
-                            following items are branches to clean
+                            following items are branches to clean.
 
 Notes on cleaning up remote branches:
 
@@ -62,12 +66,12 @@ EOF
 fi
 
 if [ "${DO}" = LIST ]; then
-    git fetch origin --prune > /dev/null 2>&1
+    git fetch "$REMOTE" --prune > /dev/null 2>&1
 
     if [ ":${FILENAME}" = : ]; then
-        git branch -r | grep origin | cut -d / -f 2-
+        git branch -r | grep "$REMOTE" | cut -d / -f 2-
     else
-        git branch -r | grep origin | cut -d / -f 2- > "${FILENAME}"
+        git branch -r | grep "$REMOTE" | cut -d / -f 2- > "${FILENAME}"
     fi
     exit 0;
 fi
@@ -96,8 +100,8 @@ if [ "${DO}" = CLEAN -a "${FORCE}" = Y ]; then
     echo Cleaning in 5 seconds, ctrl-c to stop
     seq 5 -1 1 | while read I; do echo "$I "; sleep 1; done
     echo Cleaning
-    get_list "${FILENAME}" "$@" | while read BRANCH; do git push origin ":${BRANCH}"; done
-    git fetch origin --prune > /dev/null 2>&1
+    get_list "${FILENAME}" "$@" | while read BRANCH; do git push "$REMOTE" ":${BRANCH}"; done
+    git fetch "${REMOTE}" --prune > /dev/null 2>&1
     exit 0;
 fi
 
