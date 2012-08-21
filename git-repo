@@ -4,6 +4,7 @@ DO=HELP
 FORCE=N
 FILENAME=
 REMOTE=origin
+MERGED=--
 
 case "$1" in
     list)    DO=LIST  ;;
@@ -24,6 +25,8 @@ while [ "$#" \!= 0 ]; do
         -n|--dry-run) FORCE=N ;;
         -c|--clean)   FORCE=Y ;;
         -r|--remote)  REMOTE="$2"; shift ;;
+        --merged)     MERGED="--merged" ;;
+        --no-merged)  MERGED="--no-merged" ;;
         --)           shift; break ;;
         -*)
              echo "Bad parameter $CURRENT"
@@ -51,6 +54,8 @@ Where options include:
                             Defaults to STDIN/STDOUT
 --remote [REMOTE] or -r [REMOTE]   Sets the remote repository to use.
                             Defaults to origin
+--merged                    Limit to items merged to the current commit.
+--no-merged                 Limit to items NOT merged to the current commit.
 
 --                          Not an argument, but rather an indication that all
                             following items are branches to clean.
@@ -69,9 +74,9 @@ if [ "${DO}" = LIST ]; then
     git fetch "$REMOTE" --prune > /dev/null 2>&1
 
     if [ ":${FILENAME}" = : ]; then
-        git branch -r | grep "$REMOTE" | cut -d / -f 2-
+        git branch -r "$MERGED" | grep "$REMOTE" | cut -d / -f 2-
     else
-        git branch -r | grep "$REMOTE" | cut -d / -f 2- > "${FILENAME}"
+        git branch -r "$MERGED" | grep "$REMOTE" | cut -d / -f 2- > "${FILENAME}"
     fi
     exit 0;
 fi
@@ -80,19 +85,55 @@ function get_list () {
     local FILE="$1"
     shift
 
+    MERGED_FILE="`mktemp "${TMPDIR}/repo.XXXXX"`"
+    git branch -r "$MERGED" | grep "$REMOTE" | cut -d / -f 2- | egrep -v "^(master|develop)$" | egrep -v "^HEAD " > "${MERGED_FILE}"
+
+    if [ ":${MERGED}" = ":--" ]; then
+        MERGED_LIST=N
+    else
+        MERGED_LIST=Y
+    fi
+
     while [ "$#" \!= 0 ]; do
-        echo "$1"
+        echo "$1" | egrep -v "^(master|develop)$" | egrep -v "^HEAD "
         shift
+        false
     done
 
+    # HACK -- while resets variables on completion.
+    if [ $? = 1 ]; then
+        MERGED_LIST=N
+    fi
+
     if [ ":${FILE}" \!= : ]; then
+        MERGED_LIST=N
         cat "${FILE}" | egrep -v "^(master|develop)$" | egrep -v "^HEAD "
     fi
+
+    if [ ":${MERGED_LIST}" = ":Y" ]; then
+        cat "${MERGED_FILE}"
+    fi
+
+    rm "${MERGED_FILE}"
 }
 
 if [ "${DO}" = CLEAN -a "${FORCE}" = N ]; then
-    get_list "${FILENAME}" "$@" | while read BRANCH; do echo "Would delete branch: ${BRANCH}"; done
-    echo "To actually delete these use the --clean or the -c switches"
+    FOUND_SOMETHING=N
+    get_list "${FILENAME}" "$@" | while read BRANCH; do
+        echo "Would delete branch: ${BRANCH}"
+        false
+    done
+
+    # HACK -- while resets variables on completion.
+    if [ $? = 1 ]; then
+        FOUND_SOMETHING=Y
+    fi
+
+    if [ ":${FOUND_SOMETHING}" = ":Y" ]; then
+        echo "To actually delete these use the --clean or the -c switches"
+    else
+        echo "Nothing found or specified to delete."
+    fi
     exit 0;
 fi
 
